@@ -1,5 +1,13 @@
 # Agent Meter
 
+<p>
+  <a href="https://github.com/jimmy211245/agent-meter/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jimmy211245/agent-meter/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="../../releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/jimmy211245/agent-meter?display_name=tag&sort=semver"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <img alt="Local only, no telemetry" src="https://img.shields.io/badge/privacy-100%25%20local-brightgreen">
+</p>
+
 **What do your AI coding agents actually cost? Agent Meter shows it — locally, in one dashboard.**
 It reads the session logs that **Claude Code**, **OpenAI Codex CLI**, **OpenCode**, **DeepSeek Harness** and **Google Antigravity**
 already write to disk, adds up tokens and cost per day, agent, model and project, and warns you before a rate limit runs out.

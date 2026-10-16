@@ -54,6 +54,7 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: release-files-*
@@ -70,6 +71,6 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-files/* --clobber
           else
-            gh release create "$TAG" release-files/* --draft --verify-tag --title "Agent Meter $TAG" \
-              --notes "Installers for Windows (MSI), macOS (DMG, Apple silicon) and Linux (DEB), plus the platform JARs (run with Java 21: \`java -jar <file>\`). Costs shown by the app are API list prices, not your subscription bill."
+            sed -e "s/{{TAG}}/$TAG/g" -e "s/{{VERSION}}/${TAG#v}/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+            gh release create "$TAG" release-files/* --draft --verify-tag --title "Agent Meter $TAG" --notes-file "$RUNNER_TEMP/notes.md"
           fi

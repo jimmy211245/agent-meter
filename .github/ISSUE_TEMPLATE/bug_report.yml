@@ -1,0 +1,31 @@
+name: Bug report
+description: Something is wrong, e.g. a wrong number or a crash
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect and what did you see instead? A screenshot of the dashboard helps.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Which agent is affected?
+      options: [Claude Code, Codex, OpenCode, DeepSeek Harness, Antigravity, Not agent-specific]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Agent Meter version and OS
+      placeholder: "0.1.0, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines (anonymized)
+      description: Lines from `~/.agent-meter/agent-meter.log`, or the smallest anonymized log lines that reproduce it. Replace all prompt/response text with `<redacted>` and remove paths, ids and keys.
+      render: text
