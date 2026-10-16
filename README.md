@@ -5,7 +5,14 @@ It reads the session logs that **Claude Code**, **OpenAI Codex CLI**, **OpenCode
 already write to disk, adds up tokens and cost per day, agent, model and project, and warns you before a rate limit runs out.
 Windows, macOS and Linux. Open source (MIT), no account, no telemetry.
 
-![Agent Meter dashboard (demo data)](docs/screenshot.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshot-light.png">
+    <img alt="Agent Meter dashboard (demo data)" src="docs/screenshot.png" width="900">
+  </picture>
+</p>
+
+The UI follows your system's light or dark setting.
 
 > **Costs are API list prices, not your subscription bill.** If you use a Claude, ChatGPT or Antigravity plan you pay the
 > plan fee; the numbers show what the same usage would cost through the API.
@@ -179,7 +186,7 @@ Open:
 
 ```bash
 ./gradlew test                           # parser, pricing, aggregation and scanner tests
-./gradlew run --args="--screenshot docs/screenshot.png"   # re-render the README screenshot from demo data
+./gradlew run --args="--screenshot docs/screenshot.png"   # re-render the README screenshots (dark + light) from demo data
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).

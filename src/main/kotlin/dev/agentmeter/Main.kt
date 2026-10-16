@@ -2,6 +2,8 @@ package dev.agentmeter
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Density
@@ -14,7 +16,7 @@ import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import dev.agentmeter.importers.Importers
-import dev.agentmeter.ui.AgentMeterTheme
+import dev.agentmeter.ui.theme.AgentMeterTheme
 import dev.agentmeter.ui.DashboardScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -128,7 +130,7 @@ fun main(args: Array<String>) {
                     window.toFront()
                 }
             }
-            AgentMeterTheme { DashboardScreen(dash, range, { range = it }, status) }
+            AgentMeterTheme { DashboardScreen(dash, range, { range = it }, status, loading = !loaded) }
         }
     }
 }
@@ -143,28 +145,37 @@ private fun renderScreenshot(out: Path) {
         RateLimitSnapshot("codex", "7d", 28.0, now / 1000L + 86400L * 5, now - 300_000L),
     )
     val dash = buildDashboard(demoRows(today), PriceTable.bundled(), today, Range.MONTH, rateLimits = demoLimits)
-    val scene = ImageComposeScene(1200, 1270, Density(1f)) {
-        AgentMeterTheme(dark = true) { DashboardScreen(dash, Range.MONTH, {}, "Demo data · Updated 14:32:05") }
+    // Dark and light, with animations at their final value. Dark goes to [out], light next to it as <name>-light.png.
+    val hoverX = 576f
+    val hoverY = 640f
+    for ((dark, file) in listOf(true to out, false to out.resolveSibling(out.fileName.toString().replace(".png", "-light.png")))) {
+        val scene = ImageComposeScene(1200, 1720, Density(1f)) {
+            AgentMeterTheme(dark = dark, motion = false) { DashboardScreen(dash, Range.MONTH, {}, "Demo data · Updated 14:32:05") }
+        }
+        scene.render()
+        if (dark) { // hover the busiest day so the README shows the chart tooltip
+            scene.sendPointerEvent(PointerEventType.Move, Offset(hoverX, hoverY))
+            scene.render(); scene.render()
+        }
+        val png = scene.render().encodeToData(EncodedImageFormat.PNG)!!.bytes
+        scene.close()
+        file.toAbsolutePath().parent.createDirectories()
+        file.writeBytes(png)
+        println("Wrote $file")
     }
-
-    val png = scene.render().encodeToData(EncodedImageFormat.PNG)!!.bytes
-    scene.close()
-    out.toAbsolutePath().parent.createDirectories()
-    out.writeBytes(png)
-    println("Wrote $out")
 }
 
 private fun demoRows(today: LocalDate): List<UsageRow> {
-    val rnd = Random(7)
+    val rnd = Random(11)
     val projects = listOf("/home/dev/webshop", "/home/dev/api-gateway", "/home/dev/mobile-app", "/home/dev/infra")
     val setups = listOf("claude-code" to "claude-opus-5-5", "claude-code" to "claude-sonnet-5-5", "codex" to "gpt-6.1-sol", "codex" to "gpt-6-luna",
         "opencode" to "grok-4.6", "deepseek-harness" to "deepseek-flash", "antigravity" to "gemini-3.8-flash")
-    return (0 until 30).flatMap { back ->
+    return (0 until 70).flatMap { back -> // two months, so the month-over-month change has something to compare with
         val day = today.minusDays(back.toLong())
         val ts = day.atTime(10, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         (0 until rnd.nextInt(1, 5)).map { s ->
-            val (agent, model) = setups[rnd.nextInt(setups.size)]
-            val scale = rnd.nextLong(1, 12)
+            val (agent, model) = setups[rnd.nextInt(setups.size)].let { if (back == 0 && s == 0) setups[0] else it }
+            val scale = if (back == 0) rnd.nextLong(7, 12) else rnd.nextLong(1, 12)
             UsageRow(
                 agent, "demo-$back-$s", model, projects[rnd.nextInt(projects.size)], day, ts + s * 3_600_000L, ts + s * 3_600_000L + 1_800_000L,
                 Tokens(input = 20_000 * scale, cacheRead = 900_000 * scale, cacheWrite = 60_000 * scale, output = 25_000 * scale),

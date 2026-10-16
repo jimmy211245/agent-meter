@@ -1,21 +1,16 @@
 package dev.agentmeter.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.agentmeter.Breakdown
@@ -23,22 +18,16 @@ import dev.agentmeter.Dashboard
 import dev.agentmeter.LimitWarning
 import dev.agentmeter.LimitWarningLevel
 import dev.agentmeter.Range
-import dev.agentmeter.RateLimitSnapshot
+import dev.agentmeter.ui.theme.AM
+import dev.agentmeter.ui.theme.agentColor
+import dev.agentmeter.ui.theme.agentLabel
+import dev.agentmeter.ui.theme.animatedProgress
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-
-private val agentColors = mapOf(
-    "claude-code" to Color(0xFFD97757),
-    "codex" to Color(0xFF10A37F),
-    "opencode" to Color(0xFFC77DFF),
-    "deepseek-harness" to Color(0xFF4D6BFE),
-    "antigravity" to Color(0xFFF2B01E),
-)
-private fun agentColor(agent: String) = agentColors[agent] ?: Color(0xFF7C8DB5)
+import kotlin.math.roundToInt
 
 fun usd(v: Double): String = if (v < 0.01 && v > 0) "<$0.01" else String.format(Locale.US, "$%,.2f", v)
 
@@ -50,10 +39,6 @@ fun tokens(n: Long): String = when {
 }
 
 private val tsFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
-
-@Composable
-fun AgentMeterTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) =
-    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme(), content = content)
 
 fun limitName(window: String) = "$window limit"
 
@@ -71,6 +56,20 @@ fun formatResetTime(
     return "Resets ${at.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(locale))} $time"
 }
 
+/** "resets in 2h 14m", "resets in 4d 3h": the time left until [instant]. */
+fun formatResetsIn(instant: Instant?, nowMs: Long = System.currentTimeMillis()): String {
+    if (instant == null) return "No reset time"
+    val left = instant.toEpochMilli() - nowMs
+    if (left < 0) return "resetting now"
+    val mins = left / 60_000
+    return when {
+        mins < 1 -> "resets in <1m"
+        mins < 60 -> "resets in ${mins}m"
+        mins < 1440 -> "resets in ${mins / 60}h ${mins % 60}m"
+        else -> "resets in ${mins / 1440}d ${(mins % 1440) / 60}h"
+    }
+}
+
 fun formatUpdatedAgo(timestampMs: Long, nowMs: Long = System.currentTimeMillis()): String {
     val mins = (nowMs - timestampMs).coerceAtLeast(0) / 60_000
     return when {
@@ -83,271 +82,191 @@ fun formatUpdatedAgo(timestampMs: Long, nowMs: Long = System.currentTimeMillis()
 
 const val LIMIT_RESET_TEXT = "Reset, waiting for new data"
 
+/** Change of spend against the comparable part of the previous period. */
+class Change(val direction: Direction, val percentText: String, val reference: String) {
+    enum class Direction { UP, DOWN, FLAT }
+}
+
+/** Percent change from [previous] to [current]; null when there is nothing to compare with. */
+fun deltaPercent(current: Double, previous: Double): Double? = if (previous <= 0.0) null else (current - previous) / previous * 100.0
+
+fun changeBetween(current: Double, previous: Double, reference: String): Change {
+    val pct = deltaPercent(current, previous)?.roundToInt() ?: return Change(Change.Direction.FLAT, "–", reference)
+    return when {
+        pct > 0 -> Change(Change.Direction.UP, "+$pct%", reference)
+        pct < 0 -> Change(Change.Direction.DOWN, "−${-pct}%", reference)
+        else -> Change(Change.Direction.FLAT, "±0%", reference)
+    }
+}
+
+fun projectName(path: String) = path.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
+
+/** True when nothing has been imported yet (no cost in the history, no lists, no limits). */
+fun isEmptyDashboard(d: Dashboard) = d.daily.all { it.second.isEmpty() } && d.byAgent.isEmpty() && d.rateLimits.isEmpty()
+
 @Composable
-fun DashboardScreen(d: Dashboard, range: Range, onRange: (Range) -> Unit, status: String) = Surface(Modifier.fillMaxSize()) {
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Agent Meter", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(16.dp))
-            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (d.limitWarnings.isNotEmpty()) {
-            WarningBanner(d.limitWarnings)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Stat("Today", d.today, Modifier.weight(1f))
-            Stat("This week", d.thisWeek, Modifier.weight(1f))
-            Stat("This month", d.thisMonth, Modifier.weight(1f))
-        }
-        if (d.unpricedModels.isNotEmpty()) {
-            Text(
-                "No price for: ${d.unpricedModels.sorted().joinToString()}. Their usage counts as \$0 — add them to prices.json.",
-                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        if (d.estimatedModels.isNotEmpty()) {
-            Text(
-                "Estimated cost for ${d.estimatedModels.joinToString()}: legacy prices that could not be verified against the official price page.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall,
-            )
-        }
-        if (d.byAgent.any { it.name == "antigravity" }) {
-            Text(
-                "Antigravity runs on a subscription: its cost here is the API list price, not what you pay.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall,
-            )
-        }
-        Panel("Limits") { LimitsCard(d.rateLimits) }
-        Panel("Daily cost, last ${d.daily.size} days") { DailyChart(d) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            Range.entries.forEach { r -> FilterChip(selected = r == range, onClick = { onRange(r) }, label = { Text(r.label) }) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Panel("By agent", Modifier.weight(1f)) { BreakdownList(d.byAgent) { agentColor(it) } }
-            Panel("By model", Modifier.weight(1f)) {
-                BreakdownList(d.byModel, label = { if (it in d.estimatedModels) "$it (estimated)" else it })
+fun DashboardScreen(d: Dashboard, range: Range, onRange: (Range) -> Unit, status: String, loading: Boolean = false) {
+    val c = AM.colors
+    Box(Modifier.fillMaxSize().background(c.background), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 1180.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = AM.spacing.xxl - 4.dp, vertical = AM.spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(AM.spacing.lg),
+        ) {
+            Header(status)
+            when {
+                loading -> LoadingState()
+                isEmptyDashboard(d) -> EmptyState(Modifier.padding(top = AM.spacing.lg))
+                else -> Content(d, range, onRange)
             }
-            Panel("By project", Modifier.weight(1f)) { BreakdownList(d.byProject, label = ::projectName) }
+            Text(
+                "Costs are API list prices from prices.json, not your subscription bill. All data stays on this machine.",
+                style = AM.type.caption, color = c.textMuted, modifier = Modifier.padding(top = AM.spacing.sm),
+            )
         }
-        Panel("Most expensive sessions") { Sessions(d) }
+    }
+}
+
+@Composable
+private fun Header(status: String) {
+    val c = AM.colors
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Dot(c.accent, 10.dp)
+        Spacer(Modifier.width(AM.spacing.md))
+        Text("Agent Meter", style = AM.type.title, color = c.textPrimary)
+        Spacer(Modifier.width(AM.spacing.lg))
+        Text(status, style = AM.type.caption, color = c.textMuted, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun Content(d: Dashboard, range: Range, onRange: (Range) -> Unit) {
+    val c = AM.colors
+    if (d.limitWarnings.isNotEmpty()) WarningBanner(d.limitWarnings)
+    Row(horizontalArrangement = Arrangement.spacedBy(AM.spacing.lg)) {
+        KpiCard("Today", d.today, changeBetween(d.today, d.comparison.yesterday, "vs. yesterday"), Modifier.weight(1f))
+        KpiCard("This week", d.thisWeek, changeBetween(d.thisWeek, d.comparison.lastWeekSoFar, "vs. last week"), Modifier.weight(1f))
+        KpiCard("This month", d.thisMonth, changeBetween(d.thisMonth, d.comparison.lastMonthSoFar, "vs. last month"), Modifier.weight(1f))
+    }
+    Notes(d)
+    Panel("Limits") { LimitsCard(d.rateLimits) }
+    Panel("Daily cost", trailing = { Text("last ${d.daily.size} days", style = AM.type.caption, color = c.textMuted) }) { DailyChart(d) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Breakdown", style = AM.type.subtitle, color = c.textPrimary, modifier = Modifier.weight(1f))
+        SegmentedControl(Range.entries.toList(), range, { it.label }, onRange)
+    }
+    Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(AM.spacing.lg)) {
+        Panel("By agent", Modifier.weight(1f).fillMaxHeight()) { BreakdownList(d.byAgent, label = ::agentLabel, dot = ::agentColor) }
+        Panel("By model", Modifier.weight(1f).fillMaxHeight()) {
+            BreakdownList(d.byModel, label = { if (it in d.estimatedModels) "$it (estimated)" else it }, dot = { c.accent })
+        }
+        Panel("By project", Modifier.weight(1f).fillMaxHeight()) { BreakdownList(d.byProject, label = ::projectName, dot = { c.accent }) }
+    }
+    Panel("Most expensive sessions") { Sessions(d) }
+}
+
+@Composable
+private fun Notes(d: Dashboard) {
+    val c = AM.colors
+    if (d.unpricedModels.isNotEmpty()) {
         Text(
-            "Costs are API list prices from prices.json — subscription plans bill differently. All data stays on this machine.",
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "No price for: ${d.unpricedModels.sorted().joinToString()}. Their usage counts as \$0 — add them to prices.json.",
+            style = AM.type.caption, color = c.negative,
         )
+    }
+    if (d.estimatedModels.isNotEmpty()) {
+        Text(
+            "Estimated cost for ${d.estimatedModels.joinToString()}: legacy prices that could not be verified against the official price page.",
+            style = AM.type.caption, color = c.textMuted,
+        )
+    }
+    if (d.byAgent.any { it.name == "antigravity" }) {
+        Text("Antigravity runs on a subscription: its cost here is the API list price, not what you pay.", style = AM.type.caption, color = c.textMuted)
     }
 }
 
 @Composable
 private fun WarningBanner(warnings: List<LimitWarning>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val c = AM.colors
+    Column(verticalArrangement = Arrangement.spacedBy(AM.spacing.sm)) {
         for (w in warnings) {
-            val isCritical = w.level == LimitWarningLevel.CRITICAL
-            val bgColor = if (isCritical) MaterialTheme.colorScheme.errorContainer else Color(0xFFFEF3C7)
-            val textColor = if (isCritical) MaterialTheme.colorScheme.onErrorContainer else Color(0xFF92400E)
-            val icon = if (isCritical) "🚨" else "⚠️"
-            val windowName = limitName(w.snapshot.window)
-            val agentName = w.snapshot.agent.replaceFirstChar { it.uppercase() }
-            val resetStr = formatResetTime(w.snapshot.resetsAtInstant)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = bgColor),
-                modifier = Modifier.fillMaxWidth(),
+            val critical = w.level == LimitWarningLevel.CRITICAL
+            val tone = if (critical) c.negative else c.warning
+            Row(
+                Modifier.fillMaxWidth().background(tone.copy(alpha = 0.10f), AM.shapes.medium)
+                    .border(1.dp, tone.copy(alpha = 0.35f), AM.shapes.medium)
+                    .padding(horizontal = AM.spacing.lg, vertical = AM.spacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AM.spacing.md),
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(icon, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = "Limit warning: $agentName · $windowName at ${w.snapshot.usedPercent.toInt()}% (threshold: ${w.threshold.toInt()}%) · $resetStr",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textColor,
-                    )
-                }
+                Dot(tone, 10.dp)
+                Text(
+                    "Limit warning: ${agentLabel(w.snapshot.agent)} · ${limitName(w.snapshot.window)} at ${w.snapshot.usedPercent.toInt()}% " +
+                        "(threshold: ${w.threshold.toInt()}%) · ${formatResetsIn(w.snapshot.resetsAtInstant)}",
+                    style = AM.type.bodyStrong, color = tone,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun LimitsCard(rateLimits: List<RateLimitSnapshot>) {
-    if (rateLimits.isEmpty()) {
-        Text("No limit data yet", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        rateLimits.forEach { s ->
-            val used = s.usedPercent.coerceIn(0.0, 100.0)
-            val barColor = when {
-                used >= 95.0 -> MaterialTheme.colorScheme.error
-                used >= 80.0 -> Color(0xFFF59E0B)
-                else -> agentColor(s.agent)
-            }
-            val agentLabel = s.agent.replaceFirstChar { it.uppercase() }
-            val windowLabel = limitName(s.window)
-            val now = System.currentTimeMillis()
-            val isReset = s.hasReset(now)
-            val resetText = if (isReset) LIMIT_RESET_TEXT else formatResetTime(s.resetsAtInstant, now)
-            val updatedText = formatUpdatedAgo(s.timestampMs, now)
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "$agentLabel · $windowLabel",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        if (isReset) "—" else "${String.format(Locale.US, "%.1f", s.usedPercent)} %",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (!isReset && used >= 80.0) barColor else Color.Unspecified,
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
-                ) {
-                    if (!isReset) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth((used / 100.0).toFloat().coerceIn(0.01f, 1f))
-                                .height(8.dp)
-                                .background(barColor, RoundedCornerShape(4.dp)),
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        resetText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        updatedText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-
-fun projectName(path: String) = path.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
-
-@Composable
-private fun Stat(label: String, value: Double, modifier: Modifier) = Card(modifier) {
-    Column(Modifier.padding(16.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(usd(value), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun Panel(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
-    Card(modifier) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            content()
-        }
-    }
-
-@Composable
-private fun DailyChart(d: Dashboard) {
-    val max = d.daily.maxOfOrNull { it.second.values.sum() }?.takeIf { it > 0 } ?: 1.0
-    val agents = d.daily.flatMap { it.second.keys }.toSortedSet()
-    val grid = MaterialTheme.colorScheme.outlineVariant
-    Row(verticalAlignment = Alignment.Top) {
-        Column(Modifier.height(160.dp).width(64.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Text(usd(max), style = MaterialTheme.typography.labelSmall)
-            Text("$0", style = MaterialTheme.typography.labelSmall)
-        }
-        Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-            drawLine(grid, Offset(0f, size.height), Offset(size.width, size.height))
-            drawLine(grid, Offset(0f, 0f), Offset(size.width, 0f))
-            val slot = size.width / d.daily.size
-            d.daily.forEachIndexed { i, (_, byAgent) ->
-                var y = size.height
-                for (a in agents) {
-                    val h = ((byAgent[a] ?: 0.0) / max * size.height).toFloat()
-                    if (h <= 0f) continue
-                    drawRect(agentColor(a), Offset(i * slot + slot * 0.15f, y - h), Size(slot * 0.7f, h))
-                    y -= h
-                }
-            }
-        }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("${d.daily.first().first} … ${d.daily.last().first}", style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(start = 64.dp).weight(1f))
-        agents.forEach { a ->
-            Box(Modifier.size(10.dp).background(agentColor(a), RoundedCornerShape(2.dp)))
-            Text(a, style = MaterialTheme.typography.labelSmall)
-        }
-    }
-}
-
-@Composable
-private fun BreakdownList(items: List<Breakdown>, label: (String) -> String = { it }, color: (String) -> Color? = { null }) {
+private fun BreakdownList(items: List<Breakdown>, label: (String) -> String = { it }, dot: (String) -> Color) {
+    val c = AM.colors
     if (items.isEmpty()) {
-        Text("No usage in this range", style = MaterialTheme.typography.bodySmall)
+        EmptyNote("No usage in this range")
         return
     }
     val max = items.maxOf { it.cost }.takeIf { it > 0 } ?: 1.0
-    val default = MaterialTheme.colorScheme.primary
-    items.take(8).forEach { b ->
-        Column {
-            Row {
-                Text(label(b.name), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${usd(b.cost)} · ${tokens(b.tokens)}", style = MaterialTheme.typography.bodySmall)
+    val grow = animatedProgress(items)
+    Column(verticalArrangement = Arrangement.spacedBy(AM.spacing.md)) {
+        items.take(8).forEach { b ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Dot(dot(b.name), 8.dp)
+                    Spacer(Modifier.width(AM.spacing.sm))
+                    Text(label(b.name), style = AM.type.body, color = c.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(usd(b.cost), style = AM.type.numericStrong, color = c.textPrimary, textAlign = TextAlign.End, modifier = Modifier.width(76.dp))
+                    Text(tokens(b.tokens), style = AM.type.numeric.copy(fontSize = AM.type.caption.fontSize), color = c.textMuted, textAlign = TextAlign.End, modifier = Modifier.width(56.dp))
+                }
+                Box(Modifier.fillMaxWidth().height(3.dp).background(c.track, AM.shapes.pill)) {
+                    Box(
+                        Modifier.fillMaxWidth(((b.cost / max).toFloat().coerceIn(0.01f, 1f)) * grow).height(3.dp)
+                            .background(dot(b.name).copy(alpha = 0.85f), AM.shapes.pill),
+                    )
+                }
             }
-            Box(
-                Modifier.fillMaxWidth((b.cost / max).toFloat().coerceIn(0.01f, 1f)).height(4.dp)
-                    .background(color(b.name) ?: default, RoundedCornerShape(2.dp)),
-            )
         }
     }
 }
 
 @Composable
 private fun Sessions(d: Dashboard) {
+    val c = AM.colors
     if (d.topSessions.isEmpty()) {
-        Text("No sessions in this range", style = MaterialTheme.typography.bodySmall)
+        EmptyNote("No sessions in this range")
         return
     }
-    val style = MaterialTheme.typography.bodySmall
-    Row {
-        listOf("Started" to 1.2f, "Agent" to 1f, "Project" to 1.5f, "Models" to 2.5f, "Tokens" to 0.8f, "Cost" to 0.8f)
-            .forEach { (h, w) -> Text(h, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(w)) }
-    }
-    HorizontalDivider()
-    d.topSessions.forEach { s ->
-        Row {
-            Text(tsFormat.format(Instant.ofEpochMilli(s.firstTs)), style = style, modifier = Modifier.weight(1.2f))
-            Text(s.agent, style = style, color = agentColor(s.agent), modifier = Modifier.weight(1f))
-            Text(s.project?.let(::projectName) ?: "—", style = style, modifier = Modifier.weight(1.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(s.models.joinToString(), style = style, modifier = Modifier.weight(2.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(tokens(s.tokens), style = style, modifier = Modifier.weight(0.8f))
-            Text(usd(s.cost), style = style, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(0.8f))
+    val cols = listOf(1.3f, 1.3f, 1.5f, 2.5f, 0.8f, 0.8f)
+    Column {
+    Row(Modifier.padding(bottom = AM.spacing.sm)) {
+        listOf("Started", "Agent", "Project", "Models", "Tokens", "Cost").forEachIndexed { i, h ->
+            Text(h.uppercase(), style = AM.type.label, color = c.textMuted, modifier = Modifier.weight(cols[i]), textAlign = if (i >= 4) TextAlign.End else TextAlign.Start)
         }
+    }
+    d.topSessions.forEach { s ->
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(tsFormat.format(Instant.ofEpochMilli(s.firstTs)), style = AM.type.numeric, color = c.textSecondary, modifier = Modifier.weight(cols[0]))
+            Row(Modifier.weight(cols[1]), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Dot(agentColor(s.agent))
+                Text(agentLabel(s.agent), style = AM.type.body, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(s.project?.let(::projectName) ?: "—", style = AM.type.body, color = c.textSecondary, modifier = Modifier.weight(cols[2]), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(s.models.joinToString(), style = AM.type.body, color = c.textSecondary, modifier = Modifier.weight(cols[3]), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tokens(s.tokens), style = AM.type.numeric, color = c.textSecondary, modifier = Modifier.weight(cols[4]), textAlign = TextAlign.End)
+            Text(usd(s.cost), style = AM.type.numericStrong, color = c.textPrimary, modifier = Modifier.weight(cols[5]), textAlign = TextAlign.End)
+        }
+    }
     }
 }

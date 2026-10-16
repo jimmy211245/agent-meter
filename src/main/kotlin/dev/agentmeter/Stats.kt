@@ -2,6 +2,7 @@ package dev.agentmeter
 
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
 
 enum class Range(val label: String, val days: Long?) {
@@ -23,6 +24,9 @@ data class SessionCost(
     val tokens: Long,
 )
 
+/** Spend in the comparable part of the previous period: all of yesterday, last week up to the same weekday, last month up to the same day. */
+data class Comparison(val yesterday: Double = 0.0, val lastWeekSoFar: Double = 0.0, val lastMonthSoFar: Double = 0.0)
+
 data class Dashboard(
     val today: Double,
     val thisWeek: Double,
@@ -39,6 +43,7 @@ data class Dashboard(
     val estimatedModels: Set<String> = emptySet(),
     val rateLimits: List<RateLimitSnapshot> = emptyList(),
     val limitWarnings: List<LimitWarning> = emptyList(),
+    val comparison: Comparison = Comparison(),
 )
 
 fun buildDashboard(
@@ -98,6 +103,13 @@ fun buildDashboard(
         estimatedModels = estimated,
         rateLimits = currentLimits,
         limitWarnings = warnings,
+        comparison = Comparison(
+            yesterday = sumWhere { it.day == today.minusDays(1) },
+            lastWeekSoFar = sumWhere { it.day >= weekStart.minusWeeks(1) && it.day <= today.minusWeeks(1) },
+            lastMonthSoFar = YearMonth.from(today).minusMonths(1).let { prev ->
+                sumWhere { YearMonth.from(it.day) == prev && it.day.dayOfMonth <= today.dayOfMonth }
+            },
+        ),
     )
 }
 
