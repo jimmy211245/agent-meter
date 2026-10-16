@@ -19,6 +19,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +40,7 @@ private val TOOLTIP_WIDTH = 210.dp
 @Composable
 fun DailyChart(d: Dashboard) {
     val c = AM.colors
+    val dark = c.dark
     val days = d.daily
     val max = days.maxOfOrNull { it.second.values.sum() }?.takeIf { it > 0 } ?: 1.0
     val agents = days.flatMap { it.second.keys }.toSortedSet()
@@ -46,7 +49,10 @@ fun DailyChart(d: Dashboard) {
     val progress = animatedProgress(days)
     val density = LocalDensity.current
 
-    Column(verticalArrangement = Arrangement.spacedBy(AM.spacing.sm)) {
+    val peak = days.maxByOrNull { it.second.values.sum() }
+    val summary = "Daily cost, last ${days.size} days, total ${usd(days.sumOf { it.second.values.sum() })}" +
+        (peak?.let { ", highest on ${tooltipDate(it.first)}: ${usd(it.second.values.sum())}" } ?: "")
+    Column(Modifier.semantics { contentDescription = summary }, verticalArrangement = Arrangement.spacedBy(AM.spacing.sm)) {
         Row {
             Column(Modifier.height(CHART_HEIGHT).width(56.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Text(usd(max), style = AM.type.caption.copy(fontFeatureSettings = "tnum"), color = c.textMuted)
@@ -90,7 +96,7 @@ fun DailyChart(d: Dashboard) {
                             for (a in agents) {
                                 val h = ((byAgent[a] ?: 0.0) / max * size.height).toFloat() * progress
                                 if (h <= 0f) continue
-                                drawRect(agentColor(a), Offset(x0, y - h), Size(barW, h))
+                                drawRect(agentColor(a, dark), Offset(x0, y - h), Size(barW, h))
                                 y -= h
                             }
                         }
@@ -112,7 +118,7 @@ fun DailyChart(d: Dashboard) {
         Row(horizontalArrangement = Arrangement.spacedBy(AM.spacing.lg), verticalAlignment = Alignment.CenterVertically) {
             agents.forEach { a ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Dot(agentColor(a))
+                    Dot(agentColor(a, dark))
                     Text(agentLabel(a), style = AM.type.caption, color = c.textSecondary)
                 }
             }
@@ -135,7 +141,7 @@ private fun Tooltip(day: LocalDate, byAgent: Map<String, Double>, modifier: Modi
         if (rows.isEmpty()) Text("No usage", style = AM.type.caption, color = c.textMuted)
         rows.forEach { (a, cost) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Dot(agentColor(a))
+                Dot(agentColor(a, c.dark))
                 Text(agentLabel(a), style = AM.type.caption, color = c.textSecondary, modifier = Modifier.weight(1f))
                 Text(usd(cost), style = AM.type.numeric.copy(fontSize = 12.sp), color = c.textPrimary)
             }

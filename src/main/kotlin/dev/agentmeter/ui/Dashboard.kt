@@ -156,7 +156,7 @@ private fun Content(d: Dashboard, range: Range, onRange: (Range) -> Unit) {
         SegmentedControl(Range.entries.toList(), range, { it.label }, onRange)
     }
     Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(AM.spacing.lg)) {
-        Panel("By agent", Modifier.weight(1f).fillMaxHeight()) { BreakdownList(d.byAgent, label = ::agentLabel, dot = ::agentColor) }
+        Panel("By agent", Modifier.weight(1f).fillMaxHeight()) { BreakdownList(d.byAgent, label = ::agentLabel, dot = { agentColor(it, c.dark) }) }
         Panel("By model", Modifier.weight(1f).fillMaxHeight()) {
             BreakdownList(d.byModel, label = { if (it in d.estimatedModels) "$it (estimated)" else it }, dot = { c.accent })
         }
@@ -259,7 +259,7 @@ private fun Sessions(d: Dashboard) {
         Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(tsFormat.format(Instant.ofEpochMilli(s.firstTs)), style = AM.type.numeric, color = c.textSecondary, modifier = Modifier.weight(cols[0]))
             Row(Modifier.weight(cols[1]), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Dot(agentColor(s.agent))
+                Dot(agentColor(s.agent, c.dark))
                 Text(agentLabel(s.agent), style = AM.type.body, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(s.project?.let(::projectName) ?: "—", style = AM.type.body, color = c.textSecondary, modifier = Modifier.weight(cols[2]), maxLines = 1, overflow = TextOverflow.Ellipsis)

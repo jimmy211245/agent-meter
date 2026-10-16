@@ -33,7 +33,7 @@ val DarkColors = AgentMeterColors(
     border = Color(0xFF222733),
     textPrimary = Color(0xFFECEEF4),
     textSecondary = Color(0xFFA0A7B8),
-    textMuted = Color(0xFF6C7384),
+    textMuted = Color(0xFF8189A0),
     accent = Color(0xFF8B93FF),
     positive = Color(0xFF3DD68C),
     negative = Color(0xFFFF7A7A),
@@ -53,11 +53,11 @@ val LightColors = AgentMeterColors(
     border = Color(0xFFE3E6ED),
     textPrimary = Color(0xFF11141A),
     textSecondary = Color(0xFF566073),
-    textMuted = Color(0xFF8790A1),
+    textMuted = Color(0xFF5F6A7D),
     accent = Color(0xFF5561E6),
-    positive = Color(0xFF12915B),
+    positive = Color(0xFF0B7A4C),
     negative = Color(0xFFD9363E),
-    warning = Color(0xFFB7791F),
+    warning = Color(0xFF8F5F00),
     track = Color(0xFFE9ECF2),
     grid = Color(0xFFEDEFF4),
     limitLow = Color(0xFF22B573),
@@ -68,16 +68,25 @@ val LightColors = AgentMeterColors(
 /**
  * One colour per agent, taken from the Okabe-Ito palette that stays distinguishable with the common kinds of
  * colour blindness (they also differ in lightness, so the stacked chart works in grayscale).
+ * The light variants are darker so every one has at least 3:1 contrast against a white surface.
  */
-private val agentPalette = mapOf(
+private val agentPaletteDark = mapOf(
     "claude-code" to Color(0xFFE8743B), // vermillion
     "codex" to Color(0xFF1DB386), // bluish green
     "opencode" to Color(0xFFCC79A7), // reddish purple
     "deepseek-harness" to Color(0xFF56B4E9), // sky blue
     "antigravity" to Color(0xFFF0C230), // yellow
 )
+private val agentPaletteLight = mapOf(
+    "claude-code" to Color(0xFFC9531A),
+    "codex" to Color(0xFF0B8A63),
+    "opencode" to Color(0xFFA8528A),
+    "deepseek-harness" to Color(0xFF1F7FBF),
+    "antigravity" to Color(0xFFB07F00),
+)
 
-fun agentColor(agent: String): Color = agentPalette[agent] ?: Color(0xFF8C93A6)
+fun agentColor(agent: String, dark: Boolean = true): Color =
+    (if (dark) agentPaletteDark else agentPaletteLight)[agent] ?: Color(0xFF8C93A6)
 
 /** Display name for an agent id. */
 fun agentLabel(agent: String): String = when (agent) {

@@ -40,7 +40,7 @@ fun LimitsCard(rateLimits: List<RateLimitSnapshot>) {
 
             Column(verticalArrangement = Arrangement.spacedBy(AM.spacing.sm)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Dot(agentColor(s.agent))
+                    Dot(agentColor(s.agent, c.dark))
                     Spacer(Modifier.width(AM.spacing.sm))
                     Text("${agentLabel(s.agent)} · ${limitName(s.window)}", style = AM.type.bodyStrong, color = c.textPrimary, modifier = Modifier.weight(1f))
                     Text(if (isReset) "—" else "${String.format(Locale.US, "%.1f", s.usedPercent)}%", style = AM.type.numericStrong, color = valueColor)

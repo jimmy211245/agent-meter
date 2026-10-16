@@ -117,7 +117,7 @@ fun EmptyState(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(AM.spacing.md),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(AM.spacing.sm)) {
-            listOf("claude-code", "codex", "opencode", "deepseek-harness", "antigravity").forEach { Dot(dev.agentmeter.ui.theme.agentColor(it), 10.dp) }
+            listOf("claude-code", "codex", "opencode", "deepseek-harness", "antigravity").forEach { Dot(dev.agentmeter.ui.theme.agentColor(it, c.dark), 10.dp) }
         }
         Text("No data yet", style = AM.type.title, color = c.textPrimary)
         Text(
